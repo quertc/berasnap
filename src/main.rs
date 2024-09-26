@@ -9,9 +9,8 @@ use std::io::Write;
 use std::path::Path;
 use structopt::StructOpt;
 use tar::Builder;
-use tokio::fs::File as TokioFile;
-use walkdir::WalkDir;
 use tokio_cron_scheduler::{Job, JobScheduler};
+use walkdir::WalkDir;
 
 #[derive(StructOpt)]
 pub struct Opt {
@@ -26,7 +25,7 @@ pub enum Command {
 
 #[derive(StructOpt)]
 pub struct StartOpt {
-    #[structopt(long, env = "DOCKER_COMPOSE_FILE")]
+    #[structopt(long, env = "NODE_PATH")]
     pub path: String,
 
     #[structopt(long, env = "CRON_JOB_TIME")]
@@ -36,33 +35,33 @@ pub struct StartOpt {
     pub gcs_bucket: String,
 }
 
-async fn create_snapshot(compose_path: &str, gcs_bucket: &str) -> Result<()> {
-    // let compose = Compose::builder().path(compose_path).build()?;
-    // compose.down().exec()?;
+async fn create_snapshot(node_path: &str, gcs_bucket: &str) -> Result<()> {
+    let compose_path = format!("{}/docker-compose.yml", node_path);
+    let compose = Compose::builder().path(compose_path).build()?;
+    compose.down().exec()?;
 
     create_tar_lz4(
-        compose_path,
+        node_path,
         "pruned_snapshot",
         &["./data/beacond/data"],
         &["priv_validator_state.json"],
     )?;
     create_tar_lz4(
-        compose_path,
+        node_path,
         "reth_snapshot",
         &["./data/reth/static_files", "./data/reth/db"],
         &[],
     )?;
 
-    // compose.up().exec()?;
+    compose.up().exec()?;
 
     let config = ClientConfig::default().with_auth().await?;
     let client = Client::new(config);
-    // upload_to_gcs(&client, gcs_bucket, "pruned_snapshot").await?;
-    // upload_to_gcs(&client, gcs_bucket, "reth_snapshot").await?;
+    upload_to_gcs(&client, gcs_bucket, "pruned_snapshot").await?;
+    upload_to_gcs(&client, gcs_bucket, "reth_snapshot").await?;
 
     Ok(())
 }
-
 
 fn create_tar_lz4(
     base_path: &str,
@@ -73,17 +72,15 @@ fn create_tar_lz4(
     let date = Local::now().format("%d-%m-%y").to_string();
     let file_name = format!("{}_{}.tar.lz4", name, date);
     let output_file = File::create(&file_name)?;
-    let mut encoder = EncoderBuilder::new().build(output_file)?;
-    let mut tar = Builder::new(Vec::new());
+    let encoder = EncoderBuilder::new().build(output_file)?;
+    let mut tar = Builder::new(encoder);
 
     for include_path in include_paths {
         let full_path = Path::new(base_path).join(include_path);
         add_to_tar(&mut tar, &full_path, include_path, exclude_files)?;
     }
 
-    let tar_data = tar.into_inner()?;
-    encoder.write_all(&tar_data)?;
-    encoder.finish();
+    tar.finish()?;
     Ok(())
 }
 
@@ -95,9 +92,11 @@ fn add_to_tar<W: Write>(
 ) -> Result<()> {
     let walker = WalkDir::new(full_path).into_iter();
 
-    for entry in walker.filter_entry(|e| 
-        !exclude_files.iter().any(|ex| e.path().to_str().unwrap().ends_with(ex))
-    ) {
+    for entry in walker.filter_entry(|e| {
+        !exclude_files
+            .iter()
+            .any(|ex| e.path().to_str().unwrap().ends_with(ex))
+    }) {
         let entry = entry?;
         let path = entry.path();
         if path == full_path {
@@ -135,7 +134,7 @@ async fn upload_to_gcs(client: &Client, bucket: &str, name: &str) -> Result<()> 
 }
 
 pub async fn start_scheduler(opt: StartOpt) -> Result<()> {
-    let mut sched = JobScheduler::new().await?;
+    let sched = JobScheduler::new().await?;
 
     let job = Job::new_async(opt.job_time.as_str(), move |_uuid, _l| {
         let path = opt.path.clone();
