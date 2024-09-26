@@ -13,11 +13,12 @@ pub enum Command {
 
 #[derive(StructOpt)]
 pub struct StartOpt {
-    /// Path to the docker-compose file
-    #[structopt(long, env = "DOCKER_COMPOSE_FILE")]
+    #[structopt(long, env = "NODE_PATH")]
     pub path: String,
 
-    /// The time to run the cron job
     #[structopt(long, env = "CRON_JOB_TIME")]
     pub job_time: String,
+
+    #[structopt(long, env = "GCS_BUCKET")]
+    pub gcs_bucket: String,
 }
