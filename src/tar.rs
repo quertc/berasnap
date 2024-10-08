@@ -10,7 +10,7 @@ pub fn create_tar_lz4(
     name: &str,
     include_paths: &[&str],
     exclude_files: &[&str],
-) -> Result<()> {
+) -> Result<String> {
     let date = Local::now().format("%d-%m-%y").to_string();
     let file_name = format!("{}_{}.tar.lz4", name, date);
     let output_file = File::create(&file_name)?;
@@ -23,7 +23,8 @@ pub fn create_tar_lz4(
     }
 
     tar.finish()?;
-    Ok(())
+    
+    Ok(file_name)
 }
 
 fn add_to_tar<W: Write>(

@@ -16,13 +16,13 @@ async fn create_snapshot(node_path: &str, gcs_bucket: &str) -> Result<()> {
     let compose = Compose::builder().path(compose_path).build()?;
     compose.down().exec()?;
 
-    create_tar_lz4(
+    let beacond_file_name = create_tar_lz4(
         node_path,
         "pruned_snapshot",
         &["./data/beacond/data"],
         &["priv_validator_state.json"],
     )?;
-    create_tar_lz4(
+    let reth_file_name = create_tar_lz4(
         node_path,
         "reth_snapshot",
         &["./data/reth/static_files", "./data/reth/db"],
@@ -33,8 +33,8 @@ async fn create_snapshot(node_path: &str, gcs_bucket: &str) -> Result<()> {
 
     let config = ClientConfig::default().with_auth().await?;
     let client = Client::new(config);
-    upload_to_gcs(&client, gcs_bucket, "pruned_snapshot").await?;
-    upload_to_gcs(&client, gcs_bucket, "reth_snapshot").await?;
+    upload_to_gcs(&client, gcs_bucket, &beacond_file_name).await?;
+    upload_to_gcs(&client, gcs_bucket, &reth_file_name).await?;
 
     Ok(())
 }
