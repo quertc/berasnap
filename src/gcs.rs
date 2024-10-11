@@ -1,6 +1,6 @@
 use anyhow::Result;
 use bytes::Bytes;
-use log::info;
+use log::{info, warn};
 use object_store::{gcp::GoogleCloudStorage, path::Path, ObjectStore, WriteMultipart};
 use std::{
     fs::File,
@@ -17,6 +17,11 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
 
     let object_name = format!("{}/{}", folder, file_name);
     let path = Path::from(object_name);
+
+    if gcs.head(&path).await.is_ok() {
+        warn!("File {} already exists in GCS. Skipping upload.", file_name);
+        return Ok(());
+    }
 
     let file = File::open(file_name)?;
     let file_size = file.metadata()?.len();

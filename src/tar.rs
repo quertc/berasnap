@@ -1,5 +1,6 @@
 use anyhow::Result;
 use chrono::Local;
+use log::warn;
 use lz4::EncoderBuilder;
 use std::{fs::File, io::Write, path::Path};
 use tar::Builder;
@@ -11,8 +12,14 @@ pub fn create_tar_lz4(
     include_paths: &[&str],
     exclude_files: &[&str],
 ) -> Result<String> {
-    let date = Local::now().format("%d-%m-%y").to_string();
+    let date = Local::now().format("%d-%m-%y_%H-%M").to_string();
     let file_name = format!("{}_{}.tar.lz4", name, date);
+
+    if Path::new(&file_name).exists() {
+        warn!("File {} already exists. Skip archiving.", file_name);
+        return Ok(file_name);
+    }
+
     let output_file = File::create(&file_name)?;
     let encoder = EncoderBuilder::new().build(output_file)?;
     let mut tar = Builder::new(encoder);
