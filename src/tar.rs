@@ -23,7 +23,7 @@ pub fn create_tar_lz4(
     }
 
     tar.finish()?;
-    
+
     Ok(file_name)
 }
 

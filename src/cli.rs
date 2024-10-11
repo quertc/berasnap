@@ -21,4 +21,7 @@ pub struct StartOpt {
 
     #[structopt(long, env = "GCS_BUCKET")]
     pub gcs_bucket: String,
+
+    #[structopt(long, env = "GCS_FOLDER")]
+    pub gcs_folder: String,
 }

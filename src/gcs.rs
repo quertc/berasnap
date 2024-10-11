@@ -1,110 +1,64 @@
 use anyhow::Result;
-use google_cloud_storage::{
-    client::Client,
-    http::{
-        objects::upload::{Media, UploadObjectRequest, UploadType},
-        resumable_upload_client::ChunkSize,
-    },
-};
-use serde::{Deserialize, Serialize};
+use bytes::Bytes;
+use log::info;
+use object_store::{gcp::GoogleCloudStorage, path::Path, ObjectStore, WriteMultipart};
 use std::{
-    fs::{File, OpenOptions},
-    io::{BufReader, Read, Seek, Write},
+    fs::File,
+    io::{BufReader, Read},
+    time::Instant,
 };
 
-const CHUNK_SIZE: usize = 256 * 1024 * 1024;
+const CHUNK_SIZE: usize = 128 * 1024 * 1024;
+const MAX_CONCURRENT_UPLOADS: usize = 12;
 
-#[derive(Serialize, Deserialize)]
-struct UploadState {
-    url: String,
-    last_chunk: u32,
-}
+pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &str) -> Result<()> {
+    let start_time = Instant::now();
+    info!("Starting upload for file: {}", file_name);
 
-pub async fn upload_to_gcs(client: &Client, bucket: &str, file_name: &str) -> Result<()> {
-    let object_name = format!("berachain/snapshots/{}", file_name);
-    let state_file = format!("{}.upload_state", file_name);
-
-    let (uploader, mut last_chunk) = if let Ok(state) = read_state(&state_file) {
-        println!("Resuming previous upload");
-        (client.get_resumable_upload(state.url), state.last_chunk)
-    } else {
-        println!("Starting new upload");
-        let upload_type = UploadType::Simple(Media::new(object_name));
-        let upload_request = UploadObjectRequest {
-            bucket: bucket.to_string(),
-            ..Default::default()
-        };
-        let uploader = client
-            .prepare_resumable_upload(&upload_request, &upload_type)
-            .await?;
-        (uploader, 0)
-    };
+    let object_name = format!("{}/{}", folder, file_name);
+    let path = Path::from(object_name);
 
     let file = File::open(file_name)?;
     let file_size = file.metadata()?.len();
-    let mut reader = BufReader::with_capacity(CHUNK_SIZE * 2, file);
+    let mut reader = BufReader::with_capacity(CHUNK_SIZE, file);
+
+    let multipart = gcs.put_multipart(&path).await?;
+    let mut write = WriteMultipart::new_with_chunk_size(multipart, CHUNK_SIZE);
+
+    let mut uploaded = 0;
+    let mut last_log_time = Instant::now();
 
     loop {
-        let start = u64::from(last_chunk) * CHUNK_SIZE as u64;
+        write.wait_for_capacity(MAX_CONCURRENT_UPLOADS).await?;
 
-        if start >= file_size {
+        let mut buffer = vec![0; CHUNK_SIZE];
+        let n = reader.read(&mut buffer)?;
+
+        if n == 0 {
             break;
         }
 
-        reader.seek(std::io::SeekFrom::Start(start))?;
-        let mut buffer = vec![0; CHUNK_SIZE];
-        let n = reader.read(&mut buffer)?;
         buffer.truncate(n);
+        write.put(Bytes::from(buffer));
+        uploaded += n as u64;
 
-        let end = start + n as u64 - 1;
-        let chunk = ChunkSize::new(start, end, Some(file_size));
-        uploader.upload_multiple_chunk(buffer, &chunk).await?;
-
-        last_chunk += 1;
-
-        save_state(
-            &state_file,
-            &UploadState {
-                url: uploader.url().to_string(),
-                last_chunk,
-            },
-        )?;
-
-        print_progress(start + n as u64, file_size, file_name);
+        if last_log_time.elapsed().as_secs() >= 300 {
+            info!(
+                "Upload progress: {:.2}% for {}",
+                (uploaded as f64 / file_size as f64) * 100.0,
+                file_name
+            );
+            last_log_time = Instant::now();
+        }
     }
 
-    println!("\nUpload completed successfully for {}", file_name);
-    std::fs::remove_file(state_file)?;
+    write.finish().await?;
 
-    Ok(())
-}
-
-fn print_progress(uploaded: u64, total: u64, file_name: &str) {
-    let percentage = (uploaded.min(total) as f64 / total as f64) * 100.0;
-    let uploaded_gb = uploaded as f64 / 1_073_741_824.0;
-    let total_gb = total as f64 / 1_073_741_824.0;
-    print!(
-        "\rUploaded {:.2} GB of {:.2} GB ({:.2}%) for {}",
-        uploaded_gb, total_gb, percentage, file_name
+    let duration = start_time.elapsed();
+    info!(
+        "Upload completed successfully for {} in {:?}",
+        file_name, duration
     );
-    std::io::stdout().flush().unwrap();
-}
 
-fn save_state(file_name: &str, state: &UploadState) -> Result<()> {
-    let mut file = OpenOptions::new()
-        .write(true)
-        .create(true)
-        .truncate(true)
-        .open(file_name)?;
-    let data = serde_json::to_string(state)?;
-    file.write_all(data.as_bytes())?;
     Ok(())
-}
-
-fn read_state(file_name: &str) -> Result<UploadState> {
-    let mut file = File::open(file_name)?;
-    let mut contents = String::new();
-    file.read_to_string(&mut contents)?;
-    let state: UploadState = serde_json::from_str(&contents)?;
-    Ok(state)
 }
