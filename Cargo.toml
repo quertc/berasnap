@@ -5,14 +5,19 @@ edition = "2021"
 
 [dependencies]
 anyhow = "1.0.89"
+bytes = "1.7.2"
 chrono = "0.4.38"
 compose-rs = "0.0.3"
+futures = "0.3.31"
 google-cloud-storage = "0.22.1"
 lz4 = "1.27.0"
+object_store = { version = "0.11.0" , features = ["gcp"] }
 serde = "1.0.210"
 serde_json = "1.0.128"
 structopt = "0.3.26"
+tame-gcs = "0.13.0"
 tar = "0.4.42"
 tokio = { version = "1.40.0", features = ["full"] }
 tokio-cron-scheduler = { version = "0.13.0", features = ["signal"] }
+tokio-util = "0.7.12"
 walkdir = "2.5.0"
