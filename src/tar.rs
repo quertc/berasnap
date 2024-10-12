@@ -16,7 +16,7 @@ pub fn create_tar_lz4(
         return Ok(());
     }
 
-    let output_file = File::create(&file_name)?;
+    let output_file = File::create(file_name)?;
     let mut encoder = EncoderBuilder::new().build(output_file)?;
     {
         let mut tar = Builder::new(&mut encoder);
