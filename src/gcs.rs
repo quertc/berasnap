@@ -1,9 +1,9 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use log::{info, warn};
 use object_store::{gcp::GoogleCloudStorage, path::Path, ObjectStore, WriteMultipart};
 use serde_json::{json, Value};
-use sha2::{Sha256, Digest};
+use sha2::{Digest, Sha256};
 use std::{
     fs::File,
     io::{BufReader, Read},
@@ -75,9 +75,14 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
     Ok(())
 }
 
-async fn update_json_metadata(gcs: &GoogleCloudStorage, folder: &str, file_name: &str, hash: &str) -> Result<()> {
+async fn update_json_metadata(
+    gcs: &GoogleCloudStorage,
+    folder: &str,
+    file_name: &str,
+    hash: &str,
+) -> Result<()> {
     let json_path = Path::from(format!("{}/metadata.json", folder));
-    
+
     let mut metadata: Value = match gcs.get(&json_path).await {
         Ok(data) => {
             let bytes = data.bytes().await?;
@@ -94,7 +99,8 @@ async fn update_json_metadata(gcs: &GoogleCloudStorage, folder: &str, file_name:
         "uploadTime": chrono::Utc::now().to_rfc3339()
     });
 
-    metadata["archives"].as_array_mut()
+    metadata["snapshots"]
+        .as_array_mut()
         .ok_or_else(|| anyhow!("Invalid metadata structure"))?
         .push(new_entry);
 
