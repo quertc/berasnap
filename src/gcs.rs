@@ -1,7 +1,9 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use bytes::Bytes;
 use log::{info, warn};
 use object_store::{gcp::GoogleCloudStorage, path::Path, ObjectStore, WriteMultipart};
+use serde_json::{json, Value};
+use sha2::{Sha256, Digest};
 use std::{
     fs::File,
     io::{BufReader, Read},
@@ -32,6 +34,7 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
 
     let mut uploaded = 0;
     let mut last_log_time = Instant::now();
+    let mut hasher = Sha256::new();
 
     loop {
         write.wait_for_capacity(MAX_CONCURRENT_UPLOADS).await?;
@@ -44,6 +47,7 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
         }
 
         buffer.truncate(n);
+        hasher.update(&buffer);
         write.put(Bytes::from(buffer));
         uploaded += n as u64;
 
@@ -64,6 +68,40 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
         "Upload completed successfully for {} in {:?}",
         file_name, duration
     );
+
+    let hash = format!("{:x}", hasher.finalize());
+    update_json_metadata(gcs, folder, file_name, &hash).await?;
+
+    Ok(())
+}
+
+async fn update_json_metadata(gcs: &GoogleCloudStorage, folder: &str, file_name: &str, hash: &str) -> Result<()> {
+    let json_path = Path::from(format!("{}/metadata.json", folder));
+    
+    let mut metadata: Value = match gcs.get(&json_path).await {
+        Ok(data) => {
+            let bytes = data.bytes().await?;
+            serde_json::from_slice(&bytes)?
+        }
+        Err(_) => json!({
+            "snapshots": []
+        }),
+    };
+
+    let new_entry = json!({
+        "fileName": file_name,
+        "sha256": hash,
+        "uploadTime": chrono::Utc::now().to_rfc3339()
+    });
+
+    metadata["archives"].as_array_mut()
+        .ok_or_else(|| anyhow!("Invalid metadata structure"))?
+        .push(new_entry);
+
+    let json_content = serde_json::to_string_pretty(&metadata)?;
+    gcs.put(&json_path, json_content.into()).await?;
+
+    info!("Updated metadata.json with information about {}", file_name);
 
     Ok(())
 }
