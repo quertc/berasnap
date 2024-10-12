@@ -17,15 +17,19 @@ pub fn create_tar_lz4(
     }
 
     let output_file = File::create(&file_name)?;
-    let encoder = EncoderBuilder::new().build(output_file)?;
-    let mut tar = Builder::new(encoder);
+    let mut encoder = EncoderBuilder::new().build(output_file)?;
+    {
+        let mut tar = Builder::new(&mut encoder);
 
-    for include_path in include_paths {
-        let full_path = Path::new(base_path).join(include_path);
-        add_to_tar(&mut tar, &full_path, include_path, exclude_files)?;
+        for include_path in include_paths {
+            let full_path = Path::new(base_path).join(include_path);
+            add_to_tar(&mut tar, &full_path, include_path, exclude_files)?;
+        }
+
+        tar.finish()?;
     }
-
-    tar.finish()?;
+    let (_output, result) = encoder.finish();
+    result?;
 
     Ok(())
 }
