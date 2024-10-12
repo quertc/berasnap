@@ -48,8 +48,8 @@ async fn create_snapshot(node_path: &str, gcs_bucket: &str, gcs_folder: &str) ->
         .with_bucket_name(gcs_bucket)
         .build()?;
 
-    upload_to_gcs(&gcs, gcs_folder, &beacond_file_name).await?;
-    upload_to_gcs(&gcs, gcs_folder, &reth_file_name).await?;
+    upload_to_gcs(&gcs, gcs_bucket, gcs_folder, &beacond_file_name).await?;
+    upload_to_gcs(&gcs, gcs_bucket, gcs_folder, &reth_file_name).await?;
 
     Ok(())
 }

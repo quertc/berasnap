@@ -13,11 +13,12 @@ use std::{
 const CHUNK_SIZE: usize = 128 * 1024 * 1024;
 const MAX_CONCURRENT_UPLOADS: usize = 12;
 
-pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &str) -> Result<()> {
+pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, bucket_name: &str, folder: &str, file_name: &str) -> Result<()> {
     let start_time = Instant::now();
     info!("Starting upload for file: {}", file_name);
 
     let object_name = format!("{}/{}", folder, file_name);
+    let object_uri = format!("{}/{}", bucket_name, object_name);
     let path = Path::from(object_name);
 
     if gcs.head(&path).await.is_ok() {
@@ -70,7 +71,7 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
     );
 
     let hash = format!("{:x}", hasher.finalize());
-    update_json_metadata(gcs, folder, file_name, &hash).await?;
+    update_json_metadata(gcs, folder, &object_uri, &hash).await?;
 
     Ok(())
 }
@@ -78,7 +79,7 @@ pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, folder: &str, file_name: &s
 async fn update_json_metadata(
     gcs: &GoogleCloudStorage,
     folder: &str,
-    file_name: &str,
+    object_uri: &str,
     hash: &str,
 ) -> Result<()> {
     let json_path = Path::from(format!("{}/metadata.json", folder));
@@ -94,7 +95,7 @@ async fn update_json_metadata(
     };
 
     let new_entry = json!({
-        "fileName": file_name,
+        "fileName": object_uri,
         "sha256": hash,
         "uploadTime": chrono::Utc::now().to_rfc3339()
     });
@@ -107,7 +108,7 @@ async fn update_json_metadata(
     let json_content = serde_json::to_string_pretty(&metadata)?;
     gcs.put(&json_path, json_content.into()).await?;
 
-    info!("Updated metadata.json with information about {}", file_name);
+    info!("Updated metadata.json with information about {}", object_uri);
 
     Ok(())
 }
