@@ -1,5 +1,4 @@
 use anyhow::Result;
-use chrono::Local;
 use log::warn;
 use lz4::EncoderBuilder;
 use std::{fs::File, io::Write, path::Path};
@@ -8,16 +7,13 @@ use walkdir::WalkDir;
 
 pub fn create_tar_lz4(
     base_path: &str,
-    name: &str,
+    file_name: &str,
     include_paths: &[&str],
     exclude_files: &[&str],
-) -> Result<String> {
-    let date = Local::now().format("%d-%m-%y_%H-%M").to_string();
-    let file_name = format!("{}_{}.tar.lz4", name, date);
-
+) -> Result<()> {
     if Path::new(&file_name).exists() {
         warn!("File {} already exists. Skip archiving.", file_name);
-        return Ok(file_name);
+        return Ok(());
     }
 
     let output_file = File::create(&file_name)?;
@@ -31,7 +27,7 @@ pub fn create_tar_lz4(
 
     tar.finish()?;
 
-    Ok(file_name)
+    Ok(())
 }
 
 fn add_to_tar<W: Write>(

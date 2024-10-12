@@ -18,20 +18,25 @@ mod tar;
 async fn create_snapshot(node_path: &str, gcs_bucket: &str, gcs_folder: &str) -> Result<()> {
     let compose_path = format!("{}/docker-compose.yml", node_path);
     let compose = Compose::builder().path(compose_path).build()?;
+
+    let date = Local::now().format("%d-%m-%y_%H-%M").to_string();
+    let beacond_file_name = format!("{}_{}.tar.lz4", "pruned_snapshot", date);
+    let reth_file_name = format!("{}_{}.tar.lz4", "reth_snapshot", date);
+
     info!("Stopping services in {}", node_path);
     compose.down().exec()?;
 
     info!("Archiving a beacond snapshot");
-    let beacond_file_name = create_tar_lz4(
+    create_tar_lz4(
         node_path,
-        "pruned_snapshot",
+        &beacond_file_name,
         &["./data/beacond/data"],
         &["priv_validator_state.json"],
     )?;
     info!("Archiving a reth snapshot");
-    let reth_file_name = create_tar_lz4(
+    create_tar_lz4(
         node_path,
-        "reth_snapshot",
+        &reth_file_name,
         &["./data/reth/static_files", "./data/reth/db"],
         &[],
     )?;
