@@ -19,9 +19,12 @@ pub struct StartOpt {
     #[structopt(long, env = "CRON_JOB_TIME")]
     pub job_time: String,
 
-    #[structopt(long, env = "GCS_BUCKET")]
-    pub gcs_bucket: String,
+    #[structopt(short, long)]
+    pub gcs: bool,
 
-    #[structopt(long, env = "GCS_FOLDER")]
-    pub gcs_folder: String,
+    #[structopt(long, env = "GCS_BUCKET", required_if("gcs", "true"))]
+    pub gcs_bucket: Option<String>,
+
+    #[structopt(long, env = "GCS_FOLDER", required_if("gcs", "true"))]
+    pub gcs_folder: Option<String>,
 }

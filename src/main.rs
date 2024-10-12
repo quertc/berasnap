@@ -1,4 +1,4 @@
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use chrono::Local;
 use cli::{Command, Opt, StartOpt};
 use compose_rs::{Compose, ComposeCommand};
@@ -15,7 +15,7 @@ mod cli;
 mod gcs;
 mod tar;
 
-async fn create_snapshot(node_path: &str, gcs_bucket: &str, gcs_folder: &str) -> Result<()> {
+async fn create_snapshot(node_path: &str, gcs_enabled: bool, gcs_bucket: Option<String>, gcs_folder: Option<String>) -> Result<()> {
     let compose_path = format!("{}/docker-compose.yml", node_path);
     let compose = Compose::builder().path(compose_path).build()?;
 
@@ -44,12 +44,19 @@ async fn create_snapshot(node_path: &str, gcs_bucket: &str, gcs_folder: &str) ->
     info!("Starting services in {}", node_path);
     compose.up().exec()?;
 
+    if !gcs_enabled {
+        return Ok(());
+    }
+
+    let gcs_bucket = gcs_bucket.ok_or_else(|| anyhow!("GCS_BUCKET is not set"))?;
+    let gcs_folder = gcs_folder.ok_or_else(|| anyhow!("GCS_FOLDER is not set"))?;
+
     let gcs = GoogleCloudStorageBuilder::from_env()
-        .with_bucket_name(gcs_bucket)
+        .with_bucket_name(&gcs_bucket)
         .build()?;
 
-    upload_to_gcs(&gcs, gcs_bucket, gcs_folder, &beacond_file_name).await?;
-    upload_to_gcs(&gcs, gcs_bucket, gcs_folder, &reth_file_name).await?;
+    upload_to_gcs(&gcs, &gcs_bucket, &gcs_folder, &beacond_file_name).await?;
+    upload_to_gcs(&gcs, &gcs_bucket, &gcs_folder, &reth_file_name).await?;
 
     Ok(())
 }
@@ -75,11 +82,12 @@ pub async fn start_scheduler(opt: StartOpt) -> Result<()> {
 
     let job = Job::new_async(opt.job_time.as_str(), move |_uuid, _l| {
         let path = opt.path.clone();
+        let gcs_enabled = opt.gcs;
         let bucket = opt.gcs_bucket.clone();
         let gcs_folder = opt.gcs_folder.clone();
 
         Box::pin(async move {
-            if let Err(e) = create_snapshot(&path, &bucket, &gcs_folder).await {
+            if let Err(e) = create_snapshot(&path, gcs_enabled, bucket, gcs_folder).await {
                 error!("Error during snapshot creation and upload: {}", e);
             }
         })
