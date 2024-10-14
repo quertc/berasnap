@@ -1,7 +1,10 @@
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
 use log::{info, warn};
-use object_store::{gcp::GoogleCloudStorage, path::Path, ObjectStore, WriteMultipart};
+use object_store::{
+    gcp::GoogleCloudStorage, path::Path, Attribute, Attributes, ObjectStore, PutOptions,
+    WriteMultipart,
+};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
@@ -13,7 +16,12 @@ use std::{
 const CHUNK_SIZE: usize = 128 * 1024 * 1024;
 const MAX_CONCURRENT_UPLOADS: usize = 12;
 
-pub async fn upload_to_gcs(gcs: &GoogleCloudStorage, bucket_name: &str, folder: &str, file_name: &str) -> Result<()> {
+pub async fn upload_to_gcs(
+    gcs: &GoogleCloudStorage,
+    bucket_name: &str,
+    folder: &str,
+    file_name: &str,
+) -> Result<()> {
     let start_time = Instant::now();
     info!("Starting upload for file: {}", file_name);
 
@@ -106,9 +114,18 @@ async fn update_json_metadata(
         .push(new_entry);
 
     let json_content = serde_json::to_string_pretty(&metadata)?;
-    gcs.put(&json_path, json_content.into()).await?;
 
-    info!("Updated metadata.json with information about {}", object_uri);
+    let mut attributes = Attributes::new();
+    attributes.insert(Attribute::ContentType, "application/json".into());
+    let put_options = PutOptions::from(attributes);
+
+    gcs.put_opts(&json_path, json_content.into(), put_options)
+        .await?;
+
+    info!(
+        "Updated metadata.json with information about {}",
+        object_uri
+    );
 
     Ok(())
 }
