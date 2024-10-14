@@ -32,4 +32,8 @@ pub struct StartOpt {
     /// GCS folder path (required if `--gcs` is set)
     #[structopt(long, env = "GCS_FOLDER", required_if("gcs", "true"))]
     pub gcs_folder: Option<String>,
+
+    /// Number of snapshots to keep
+    #[structopt(long, env = "SNAPS_KEEP", default_value = "1")]
+    pub keep: usize,
 }

@@ -4,6 +4,7 @@ use cli::{Command, Opt, StartOpt};
 use compose_rs::{Compose, ComposeCommand};
 use env_logger::Builder;
 use gcs::upload_to_gcs;
+use gcs::NodeType;
 use log::{error, info, LevelFilter};
 use object_store::gcp::GoogleCloudStorageBuilder;
 use std::io::Write;
@@ -20,6 +21,7 @@ async fn create_snapshot(
     gcs_enabled: bool,
     gcs_bucket: Option<String>,
     gcs_folder: Option<String>,
+    keep: usize,
 ) -> Result<()> {
     let compose_path = format!("{}/docker-compose.yml", node_path);
     let compose = Compose::builder().path(compose_path).build()?;
@@ -60,8 +62,24 @@ async fn create_snapshot(
         .with_bucket_name(&gcs_bucket)
         .build()?;
 
-    upload_to_gcs(&gcs, &gcs_bucket, &gcs_folder, &beacond_file_name).await?;
-    upload_to_gcs(&gcs, &gcs_bucket, &gcs_folder, &reth_file_name).await?;
+    upload_to_gcs(
+        &gcs,
+        &gcs_bucket,
+        &gcs_folder,
+        &beacond_file_name,
+        NodeType::Beacond,
+        keep,
+    )
+    .await?;
+    upload_to_gcs(
+        &gcs,
+        &gcs_bucket,
+        &gcs_folder,
+        &reth_file_name,
+        NodeType::Reth,
+        keep,
+    )
+    .await?;
 
     Ok(())
 }
@@ -90,9 +108,10 @@ pub async fn start_scheduler(opt: StartOpt) -> Result<()> {
         let gcs_enabled = opt.gcs;
         let bucket = opt.gcs_bucket.clone();
         let gcs_folder = opt.gcs_folder.clone();
+        let keep = opt.keep;
 
         Box::pin(async move {
-            if let Err(e) = create_snapshot(&path, gcs_enabled, bucket, gcs_folder).await {
+            if let Err(e) = create_snapshot(&path, gcs_enabled, bucket, gcs_folder, keep).await {
                 error!("Error during snapshot creation and upload: {}", e);
             }
         })

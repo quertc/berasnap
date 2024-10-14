@@ -1,5 +1,6 @@
 use anyhow::{anyhow, Result};
 use bytes::Bytes;
+use chrono::{DateTime, Utc};
 use log::{info, warn};
 use object_store::{
     gcp::GoogleCloudStorage, path::Path, Attribute, Attributes, ObjectStore, PutOptions,
@@ -16,11 +17,28 @@ use std::{
 const CHUNK_SIZE: usize = 128 * 1024 * 1024;
 const MAX_CONCURRENT_UPLOADS: usize = 12;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NodeType {
+    Beacond,
+    Reth,
+}
+
+impl NodeType {
+    fn as_str(&self) -> &'static str {
+        match self {
+            NodeType::Beacond => "beacond",
+            NodeType::Reth => "reth",
+        }
+    }
+}
+
 pub async fn upload_to_gcs(
     gcs: &GoogleCloudStorage,
     bucket_name: &str,
     folder: &str,
     file_name: &str,
+    node_type: NodeType,
+    keep: usize,
 ) -> Result<()> {
     let start_time = Instant::now();
     info!("Starting upload for file: {}", file_name);
@@ -79,16 +97,19 @@ pub async fn upload_to_gcs(
     );
 
     let hash = format!("{:x}", hasher.finalize());
-    update_json_metadata(gcs, folder, &object_uri, &hash).await?;
+    update_json_metadata(gcs, bucket_name, folder, &object_uri, &hash, node_type, keep).await?;
 
     Ok(())
 }
 
 async fn update_json_metadata(
     gcs: &GoogleCloudStorage,
+    bucket_name: &str,
     folder: &str,
     object_uri: &str,
     hash: &str,
+    node_type: NodeType,
+    keep: usize,
 ) -> Result<()> {
     let json_path = Path::from(format!("{}/metadata.json", folder));
 
@@ -105,13 +126,43 @@ async fn update_json_metadata(
     let new_entry = json!({
         "fileName": object_uri,
         "sha256": hash,
+        "type": node_type.as_str(),
         "uploadTime": chrono::Utc::now().to_rfc3339()
     });
 
-    metadata["snapshots"]
-        .as_array_mut()
-        .ok_or_else(|| anyhow!("Invalid metadata structure"))?
-        .push(new_entry);
+    let snapshots = metadata["snapshots"].as_array_mut().ok_or_else(|| anyhow!("Invalid metadata structure"))?;
+    snapshots.push(new_entry);
+
+    snapshots.sort_by(|a, b| {
+        let a_time: DateTime<Utc> = a["uploadTime"].as_str().unwrap().parse().unwrap();
+        let b_time: DateTime<Utc> = b["uploadTime"].as_str().unwrap().parse().unwrap();
+        b_time.cmp(&a_time)
+    });
+
+    let mut beacond_count = 0;
+    let mut reth_count = 0;
+    let mut to_delete = Vec::new();
+
+    snapshots.retain(|snapshot| {
+        let snapshot_type = snapshot["type"].as_str().unwrap();
+        let keep_snapshot = match snapshot_type {
+            "beacond" => {
+                beacond_count += 1;
+                beacond_count <= keep
+            }
+            "reth" => {
+                reth_count += 1;
+                reth_count <= keep
+            }
+            _ => false,
+        };
+
+        if !keep_snapshot {
+            to_delete.push(snapshot["fileName"].as_str().unwrap().to_string());
+        }
+
+        keep_snapshot
+    });
 
     let json_content = serde_json::to_string_pretty(&metadata)?;
 
@@ -126,6 +177,15 @@ async fn update_json_metadata(
         "Updated metadata.json with information about {}",
         object_uri
     );
+
+    for file_to_delete in to_delete {
+        let delete_path = Path::from(file_to_delete.trim_start_matches(&format!("{}/", bucket_name)));
+        if let Err(e) = gcs.delete(&delete_path).await {
+            warn!("Failed to delete file from GCS: {}. Error: {}", file_to_delete, e);
+        } else {
+            info!("Deleted excess snapshot from GCS: {}", file_to_delete);
+        }
+    }
 
     Ok(())
 }
