@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow};
+use anyhow::{anyhow, Result};
 use chrono::Local;
 use cli::{Command, Opt, StartOpt};
 use compose_rs::{Compose, ComposeCommand};
@@ -15,7 +15,12 @@ mod cli;
 mod gcs;
 mod tar;
 
-async fn create_snapshot(node_path: &str, gcs_enabled: bool, gcs_bucket: Option<String>, gcs_folder: Option<String>) -> Result<()> {
+async fn create_snapshot(
+    node_path: &str,
+    gcs_enabled: bool,
+    gcs_bucket: Option<String>,
+    gcs_folder: Option<String>,
+) -> Result<()> {
     let compose_path = format!("{}/docker-compose.yml", node_path);
     let compose = Compose::builder().path(compose_path).build()?;
 
