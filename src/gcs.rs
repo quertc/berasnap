@@ -97,7 +97,16 @@ pub async fn upload_to_gcs(
     );
 
     let hash = format!("{:x}", hasher.finalize());
-    update_json_metadata(gcs, bucket_name, folder, &object_uri, &hash, node_type, keep).await?;
+    update_json_metadata(
+        gcs,
+        bucket_name,
+        folder,
+        &object_uri,
+        &hash,
+        node_type,
+        keep,
+    )
+    .await?;
 
     Ok(())
 }
@@ -130,7 +139,9 @@ async fn update_json_metadata(
         "uploadTime": chrono::Utc::now().to_rfc3339()
     });
 
-    let snapshots = metadata["snapshots"].as_array_mut().ok_or_else(|| anyhow!("Invalid metadata structure"))?;
+    let snapshots = metadata["snapshots"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow!("Invalid metadata structure"))?;
     snapshots.push(new_entry);
 
     snapshots.sort_by(|a, b| {
@@ -179,9 +190,13 @@ async fn update_json_metadata(
     );
 
     for file_to_delete in to_delete {
-        let delete_path = Path::from(file_to_delete.trim_start_matches(&format!("{}/", bucket_name)));
+        let delete_path =
+            Path::from(file_to_delete.trim_start_matches(&format!("{}/", bucket_name)));
         if let Err(e) = gcs.delete(&delete_path).await {
-            warn!("Failed to delete file from GCS: {}. Error: {}", file_to_delete, e);
+            warn!(
+                "Failed to delete file from GCS: {}. Error: {}",
+                file_to_delete, e
+            );
         } else {
             info!("Deleted excess snapshot from GCS: {}", file_to_delete);
         }
