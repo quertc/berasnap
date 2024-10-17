@@ -179,6 +179,7 @@ async fn update_json_metadata(
 
     let mut attributes = Attributes::new();
     attributes.insert(Attribute::ContentType, "application/json".into());
+    attributes.insert(Attribute::CacheControl, "no-store".into());
     let put_options = PutOptions::from(attributes);
 
     gcs.put_opts(&json_path, json_content.into(), put_options)
