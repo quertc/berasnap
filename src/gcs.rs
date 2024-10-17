@@ -175,16 +175,11 @@ async fn update_json_metadata(
         keep_snapshot
     });
 
-    println!("{:?}", snapshots);
-
-    metadata["snapshots"] = json!(snapshots);
-
-    println!("{:?}", metadata["snapshots"]);
-
     let json_content = serde_json::to_string_pretty(&metadata)?;
 
     let mut attributes = Attributes::new();
     attributes.insert(Attribute::ContentType, "application/json".into());
+    attributes.insert(Attribute::CacheControl, "no-store".into());
     let put_options = PutOptions::from(attributes);
 
     gcs.put_opts(&json_path, json_content.into(), put_options)
