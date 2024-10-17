@@ -175,6 +175,12 @@ async fn update_json_metadata(
         keep_snapshot
     });
 
+    println!("{:?}", snapshots);
+
+    metadata["snapshots"] = json!(snapshots);
+
+    println!("{:?}", metadata["snapshots"]);
+
     let json_content = serde_json::to_string_pretty(&metadata)?;
 
     let mut attributes = Attributes::new();
