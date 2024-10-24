@@ -18,6 +18,7 @@ use tower_http::{timeout::TimeoutLayer, trace::TraceLayer};
 const API_TIMEOUT_SECS: u64 = 30;
 
 #[derive(Debug, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     file_name: String,
     sha256: String,
