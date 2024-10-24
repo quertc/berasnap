@@ -9,8 +9,9 @@ use object_store::{
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
 use std::{
-    fs::File,
+    fs::{self, File},
     io::{BufReader, Read},
+    path::Path as StdPath,
     time::Instant,
 };
 
@@ -200,6 +201,86 @@ async fn update_json_metadata(
             );
         } else {
             info!("Deleted excess snapshot from GCS: {}", file_to_delete);
+        }
+    }
+
+    Ok(())
+}
+
+pub async fn update_local_metadata(
+    storage_path: &str,
+    file_name: &str,
+    node_type: NodeType,
+    keep: usize,
+) -> Result<()> {
+    let metadata_path = StdPath::new(storage_path).join("metadata.json");
+
+    let mut metadata: Value = if metadata_path.exists() {
+        let content = fs::read_to_string(&metadata_path)?;
+        serde_json::from_str(&content)?
+    } else {
+        json!({
+            "snapshots": []
+        })
+    };
+
+    let mut file = fs::File::open(StdPath::new(storage_path).join(file_name))?;
+    let mut hasher = Sha256::new();
+    std::io::copy(&mut file, &mut hasher)?;
+    let hash = format!("{:x}", hasher.finalize());
+
+    let new_entry = json!({
+        "fileName": file_name,
+        "sha256": hash,
+        "type": node_type.as_str(),
+        "uploadTime": chrono::Utc::now().to_rfc3339()
+    });
+
+    let snapshots = metadata["snapshots"]
+        .as_array_mut()
+        .ok_or_else(|| anyhow!("Invalid metadata structure"))?;
+    snapshots.push(new_entry);
+
+    snapshots.sort_by(|a, b| {
+        let a_time: DateTime<Utc> = a["uploadTime"].as_str().unwrap().parse().unwrap();
+        let b_time: DateTime<Utc> = b["uploadTime"].as_str().unwrap().parse().unwrap();
+        b_time.cmp(&a_time)
+    });
+
+    let mut beacond_count = 0;
+    let mut reth_count = 0;
+    let mut to_delete = Vec::new();
+
+    snapshots.retain(|snapshot| {
+        let snapshot_type = snapshot["type"].as_str().unwrap();
+        let keep_snapshot = match snapshot_type {
+            "beacond" => {
+                beacond_count += 1;
+                beacond_count <= keep
+            }
+            "reth" => {
+                reth_count += 1;
+                reth_count <= keep
+            }
+            _ => false,
+        };
+
+        if !keep_snapshot {
+            to_delete.push(snapshot["fileName"].as_str().unwrap().to_string());
+        }
+
+        keep_snapshot
+    });
+
+    let json_content = serde_json::to_string_pretty(&metadata)?;
+    fs::write(&metadata_path, json_content)?;
+
+    for file_to_delete in to_delete {
+        let file_path = StdPath::new(storage_path).join(&file_to_delete);
+        if let Err(e) = fs::remove_file(file_path) {
+            warn!("Failed to delete file: {}. Error: {}", file_to_delete, e);
+        } else {
+            info!("Deleted excess snapshot: {}", file_to_delete);
         }
     }
 

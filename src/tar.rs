@@ -7,16 +7,16 @@ use walkdir::WalkDir;
 
 pub fn create_tar_lz4(
     base_path: &str,
-    file_name: &str,
+    file_path: &str,
     include_paths: &[&str],
     exclude_files: &[&str],
 ) -> Result<()> {
-    if Path::new(&file_name).exists() {
-        warn!("File {} already exists. Skip archiving.", file_name);
+    if Path::new(&file_path).exists() {
+        warn!("File {} already exists. Skip archiving.", file_path);
         return Ok(());
     }
 
-    let output_file = File::create(file_name)?;
+    let output_file = File::create(file_path)?;
     let mut encoder = EncoderBuilder::new().build(output_file)?;
     {
         let mut tar = Builder::new(&mut encoder);

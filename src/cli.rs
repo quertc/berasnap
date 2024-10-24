@@ -21,6 +21,18 @@ pub struct StartOpt {
     #[structopt(long, env = "CRON_JOB_TIME")]
     pub job_time: String,
 
+    /// Enable HTTP storage API server
+    #[structopt(long, short)]
+    pub api: bool,
+
+    /// API server port (required if `--api` is set)
+    #[structopt(long, env = "API_PORT", default_value = "3050", required_if("api", "true"))]
+    pub api_port: u16,
+
+    /// Path to store local snapshots
+    #[structopt(long, env = "STORAGE_PATH", default_value = "storage")]
+    pub storage_path: String,
+
     /// Enable Google Cloud Storage upload
     #[structopt(short, long)]
     pub gcs: bool,
