@@ -21,7 +21,7 @@ pub struct StartOpt {
     #[structopt(long, env = "CRON_JOB_TIME")]
     pub job_time: String,
 
-    /// Enable HTTP storage API server
+    /// Enable API for snapshot distribution
     #[structopt(long, short)]
     pub api: bool,
 
